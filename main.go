@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/tjeumaster/go-sparkplug/sparkplug"
@@ -52,9 +53,28 @@ func main() {
 
 	time.Sleep(2 * time.Second)
 
+	client.PublishDBIRTH(d)
+
+	m := map[string]any{
+		"Temperature": 26.5,
+		"Humidity":    65,
+		"Status":      "OK",
+		"Online":     true,
+	}
+
+	for k, v := range m {
+		fmt.Printf("Metric %s: %v\n", k, v)
+	}
+
+	client.PublishDDATA(d, m)
+
+	time.Sleep(2 * time.Second)
+
 	client.PublishDDEATH(d)
 
 	time.Sleep(2 * time.Second)
 
-	client.PublishDBIRTH(d)
+	client.PublishNDEATH()
+
+
 }

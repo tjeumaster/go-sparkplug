@@ -12,7 +12,7 @@ func (c *Client) buildNBIRTHPayload() ([]byte, error) {
 		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
 		Seq:       proto.Uint64(c.getSeq()),
 		Metrics: []*sproto.Payload_Metric{
-			ToMetric("bdSeq", c.BdSeq),
+			ToMetric("bdSeq", c.getBdSeq()),
 			ToMetric("Node Control/Rebirth", false),
 			ToMetric("Node Control/Reboot", false),
 		},
@@ -27,7 +27,7 @@ func (c *Client) buildNBIRTHPayload() ([]byte, error) {
 }
 
 func (c *Client) buildNDEATHPayload() ([]byte, error) {
-	bdSeq := c.BdSeq - 1
+	bdSeq := c.currentBdSeq
 	payload := &sproto.Payload{
 		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
 		Seq:       proto.Uint64(c.getSeq()),
@@ -68,7 +68,7 @@ func (c *Client) buildDBIRTHPayload(d SparkplugDevice) ([]byte, error) {
 	return payloadBytes, nil
 }
 
-func (c *Client) buildDDEATHPayload(d SparkplugDevice) ([]byte, error) {
+func (c *Client) buildDDEATHPayload() ([]byte, error) {
 	payload := &sproto.Payload{
 		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
 		Seq:       proto.Uint64(c.getSeq()),
@@ -77,6 +77,58 @@ func (c *Client) buildDDEATHPayload(d SparkplugDevice) ([]byte, error) {
 	payloadBytes, err := proto.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal DDEATH payload: %w", err)
+	}
+
+	return payloadBytes, nil
+}
+
+func (c *Client) buildNDATAPayload(metricValues map[string]any) ([]byte, error) {
+	if len(metricValues) == 0 {
+		return nil, fmt.Errorf("no metrics provided for NDATA payload")
+	}
+
+	metrics := make([]*sproto.Payload_Metric, 0, len(metricValues))
+	for name, value := range metricValues {
+		metric := ToMetric(name, value)
+		if metric != nil {
+			metrics = append(metrics, metric)
+		}
+	}
+
+	payload := &sproto.Payload{
+		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
+		Seq:       proto.Uint64(c.getSeq()),
+		Metrics:   metrics,
+	}
+
+	payloadBytes, err := proto.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal NDATAPayload: %w", err)
+	}
+
+	return payloadBytes, nil
+}
+
+func (c *Client) buildDDATAPayload(metricValues map[string]any) ([]byte, error) {
+	if len(metricValues) == 0 {
+		return nil, fmt.Errorf("no metrics provided for DDATA payload")
+	}
+
+	metrics := make([]*sproto.Payload_Metric, 0, len(metricValues))
+	for name, value := range metricValues {
+		metric := ToMetric(name, value)
+		metrics = append(metrics, metric)
+	}
+
+	payload := &sproto.Payload{
+		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
+		Seq:       proto.Uint64(c.getSeq()),
+		Metrics: metrics,
+	}
+
+	payloadBytes, err := proto.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal DDATA payload: %w", err)
 	}
 
 	return payloadBytes, nil
