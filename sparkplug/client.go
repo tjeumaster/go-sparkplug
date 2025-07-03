@@ -61,59 +61,6 @@ func (c *Client) getBdSeq() uint64 {
 	return c.currentBdSeq
 }
 
-
-const (
-	NBIRTH = "NBIRTH"
-	NDEATH = "NDEATH"
-	DBIRTH = "DBIRTH"
-	DDEATH = "DDEATH"
-	NDATA  = "NDATA"
-	DDATA  = "DDATA"
-	NCMD   = "NCMD"
-	DCMD   = "DCMD"
-)
-
-func (c *Client) getTopic(d SparkplugDevice, topicType string) string {
-	switch topicType {
-	case NBIRTH:
-		return fmt.Sprintf("spBv1.0/%s/NBIRTH/%s", c.Config.GroupID, c.Config.NodeID)
-
-	case NDEATH:
-		return fmt.Sprintf("spBv1.0/%s/NDEATH/%s", c.Config.GroupID, c.Config.NodeID)
-
-	case DBIRTH:
-		if d == nil {
-			return ""
-		}
-		return fmt.Sprintf("spBv1.0/%s/DBIRTH/%s/%s", c.Config.GroupID, c.Config.NodeID, d.GetDeviceID())
-
-	case DDEATH:
-		if d == nil {
-			return ""
-		}
-		return fmt.Sprintf("spBv1.0/%s/DDEATH/%s/%s", c.Config.GroupID, c.Config.NodeID, d.GetDeviceID())
-
-	case NDATA:
-		return fmt.Sprintf("spBv1.0/%s/NDATA/%s", c.Config.GroupID, c.Config.NodeID)
-
-	case DDATA:
-		if d == nil {
-			return ""
-		}
-		
-		return fmt.Sprintf("spBv1.0/%s/DDATA/%s/%s", c.Config.GroupID, c.Config.NodeID, d.GetDeviceID())
-
-	case NCMD:
-		return fmt.Sprintf("spBv1.0/%s/NCMD/%s", c.Config.GroupID, c.Config.NodeID)
-
-	case DCMD:
-		return fmt.Sprintf("spBv1.0/%s/DCMD/%s/+", c.Config.GroupID, c.Config.NodeID)
-
-	default:
-		return ""
-	}
-}
-
 func (c *Client) Start() {
 	mqttBroker := fmt.Sprintf("tcp://%s:%d", c.Config.Host, c.Config.Port)
 
@@ -122,10 +69,7 @@ func (c *Client) Start() {
 		log.Fatalf("Failed to build NDEATH payload: %v", err)
 	}
 	
-	ndeathTopic := c.getTopic(nil, NDEATH)
-	if ndeathTopic == "" {
-		log.Fatalf("Failed to get NDEATH topic")
-	}
+	ndeathTopic := fmt.Sprintf("spBv1.0/%s/NDEATH/%s", c.Config.GroupID, c.Config.NodeID)
 
 	opts := mqtt.NewClientOptions().
 			AddBroker(mqttBroker).
@@ -148,36 +92,43 @@ func (c *Client) Start() {
 		}
 	}
 
-	c.MqttClient.Subscribe(c.getTopic(nil, NCMD), 0, c.onCommandReceived)
-	c.MqttClient.Subscribe(c.getTopic(nil, DCMD), 0, c.onCommandReceived)
+	ncmdTopic := fmt.Sprintf("spBv1.0/%s/NCMD/%s", c.Config.GroupID, c.Config.NodeID)
+	dcmdTopic := fmt.Sprintf("spBv1.0/%s/DCMD/%s/+", c.Config.GroupID, c.Config.NodeID)
+	c.MqttClient.Subscribe(ncmdTopic, 0, c.onCommandReceived)
+	c.MqttClient.Subscribe(dcmdTopic, 0, c.onCommandReceived)
 
 	log.Printf("Connected to MQTT broker at %s", mqttBroker)
 }
 
 func (c *Client) Stop() {
 	if c.MqttClient != nil && c.MqttClient.IsConnected() {
-		ddeathPayload, err := c.buildNDEATHPayload()
-		if err != nil {
-			log.Printf("Failed to build NDEATH payload: %v", err)
-		} else {
-			ddeathTopic := c.getTopic(nil, NDEATH)
-			if ddeathTopic != "" {
-				token := c.MqttClient.Publish(ddeathTopic, 0, true, string(ddeathPayload))
-				token.Wait()
-				if err := token.Error(); err != nil {
-					log.Printf("Failed to publish NDEATH: %v", err)
-				} else {
-					log.Printf("Published NDEATH to topic %s", ddeathTopic)
-				}
-			} else {
-				log.Printf("Failed to get NDEATH topic")
-			}
-		}
-		c.MqttClient.Disconnect(250)
-		log.Printf("Disconnected from MQTT broker")
-	} else {
 		log.Printf("MQTT client is not connected, nothing to stop")
+		return
 	}
+
+	ddeathPayload, err := c.buildNDEATHPayload()
+	if err != nil {
+		log.Printf("Failed to build NDEATH payload: %v", err)
+		
+	} else {
+		ddeathTopic := fmt.Sprintf("spBv1.0/%s/NDEATH/%s", c.Config.GroupID, c.Config.NodeID)
+		token := c.MqttClient.Publish(ddeathTopic, 0, true, string(ddeathPayload))
+		token.Wait()
+		if err := token.Error(); err != nil {
+			log.Printf("Failed to publish NDEATH: %v", err)
+		} 
+		
+		log.Printf("Published NDEATH to topic %s", ddeathTopic)
+		
+	} 
+		
+	c.MqttClient.Disconnect(250)
+	log.Printf("Disconnected from MQTT broker")
+	c.MqttClient = nil
+	c.BdSeq = 0
+	c.currentBdSeq = 0
+	c.Seq = 0
+	log.Printf("MQTT client stopped and reset")
 }
 
 func (c *Client) publish(topic string, payload []byte, retained bool) error {
@@ -195,7 +146,7 @@ func (c *Client) PublishNBIRTH() error {
 		return fmt.Errorf("failed to build NBIRTH payload: %w", err)
 	}
 
-	topic := c.getTopic(nil, NBIRTH)
+	topic := fmt.Sprintf("spBv1.0/%s/NBIRTH/%s", c.Config.GroupID, c.Config.NodeID)
 	if err := c.publish(topic, payload, true); err != nil {
 		return fmt.Errorf("failed to publish NBIRTH: %w", err)
 	}
