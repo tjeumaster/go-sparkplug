@@ -101,7 +101,7 @@ func (c *Client) Start() {
 }
 
 func (c *Client) Stop() {
-	if c.MqttClient != nil && c.MqttClient.IsConnected() {
+	if c.MqttClient == nil || !c.MqttClient.IsConnected() {
 		log.Printf("MQTT client is not connected, nothing to stop")
 		return
 	}

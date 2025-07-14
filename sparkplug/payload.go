@@ -117,7 +117,9 @@ func (c *Client) buildDDATAPayload(metricValues map[string]any) ([]byte, error) 
 	metrics := make([]*sproto.Payload_Metric, 0, len(metricValues))
 	for name, value := range metricValues {
 		metric := ToMetric(name, value)
-		metrics = append(metrics, metric)
+		if metric != nil {
+			metrics = append(metrics, metric)
+		}
 	}
 
 	payload := &sproto.Payload{
