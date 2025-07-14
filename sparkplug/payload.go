@@ -46,7 +46,7 @@ func (c *Client) buildNDEATHPayload() ([]byte, error) {
 	return payloadBytes, nil
 }
 
-func (c *Client) buildDBIRTHPayload(d SparkplugDevice) ([]byte, error) {
+func (c *Client) buildDBIRTHPayload(d Device) ([]byte, error) {
 	values := d.GetMetricValues()
 	metrics := make([]*sproto.Payload_Metric, 0, len(values))
 	for name, value := range values {

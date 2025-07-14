@@ -13,14 +13,14 @@ import (
 
 type Client struct {
 	MqttClient mqtt.Client
-	Config	 *SparkplugConfig
+	Config	 *Config
 	BdSeq uint64
 	currentBdSeq uint64
 	Seq uint64
 	mu sync.Mutex
 }
 
-type SparkplugConfig struct {
+type Config struct {
 	Host     string
 	Port     int
 	Username string
@@ -30,13 +30,13 @@ type SparkplugConfig struct {
 	NodeID   string
 }
 
-type SparkplugDevice interface {
-	GetDeviceID() string
+
+type Device interface {
+	GetId() string
 	GetMetricValues() map[string]any
-	GetMetricValueByName(name string) any
 }
 
-func NewClient(config *SparkplugConfig) *Client {
+func NewClient(config *Config) *Client {
 	return &Client{
 		Config: config,
 		BdSeq: 0,
@@ -87,7 +87,7 @@ func (c *Client) Start() {
 		if err := token.Error(); err == nil {
 			break
 		} else {
-			fmt.Printf("Connection failed: %v. Retrying in 10 seconds...\n", err)
+			fmt.Printf("MQTT Client Connection failed: %v. Retrying in 10 seconds...\n", err)
 			time.Sleep(10 * time.Second)
 		}
 	}
@@ -174,34 +174,34 @@ func (c *Client) PublishNDEATH() error {
 	return nil
 }
 
-func (c *Client) PublishDBIRTH(device SparkplugDevice) error {
+func (c *Client) PublishDBIRTH(device Device) error {
 	payload, err := c.buildDBIRTHPayload(device)
 	if err != nil {
 		return fmt.Errorf("failed to build DBIRTH payload: %w", err)
 	}
 
-	topic := fmt.Sprintf("spBv1.0/%s/DBIRTH/%s/%s", c.Config.GroupID, c.Config.NodeID, device.GetDeviceID())
+	topic := fmt.Sprintf("spBv1.0/%s/DBIRTH/%s/%s", c.Config.GroupID, c.Config.NodeID, device.GetId())
 	if err := c.publish(topic, payload, false); err != nil {
 		return fmt.Errorf("failed to publish DBIRTH: %w", err)
 	}
 
-	log.Printf("Published DBIRTH for device %s to topic %s", device.GetDeviceID(), topic)
+	log.Printf("Published DBIRTH for device %s to topic %s", device.GetId(), topic)
 
 	return nil
 }
 
-func (c *Client) PublishDDEATH(device SparkplugDevice) error {
+func (c *Client) PublishDDEATH(device Device) error {
 	payload, err := c.buildDDEATHPayload()
 	if err != nil {
 		return fmt.Errorf("failed to build DDEATH payload: %w", err)
 	}
 
-	topic := fmt.Sprintf("spBv1.0/%s/DDEATH/%s/%s", c.Config.GroupID, c.Config.NodeID, device.GetDeviceID())
+	topic := fmt.Sprintf("spBv1.0/%s/DDEATH/%s/%s", c.Config.GroupID, c.Config.NodeID, device.GetId())
 	if err := c.publish(topic, payload, false); err != nil {
 		return fmt.Errorf("failed to publish DDEATH: %w", err)
 	}
 
-	log.Printf("Published DDEATH for device %s to topic %s", device.GetDeviceID(), topic)
+	log.Printf("Published DDEATH for device %s to topic %s", device.GetId(), topic)
 
 	return nil
 }
@@ -222,18 +222,18 @@ func (c *Client) PublishNDATA(metricValues map[string]any) error {
 	return nil
 }
 
-func (c *Client) PublishDDATA(device SparkplugDevice, metricValues map[string]any) error {
+func (c *Client) PublishDDATA(device Device, metricValues map[string]any) error {
 	payload, err := c.buildDDATAPayload(metricValues)
 	if err != nil {
 		return fmt.Errorf("failed to build DDATA payload: %w", err)
 	}
 
-	topic := fmt.Sprintf("spBv1.0/%s/DDATA/%s/%s", c.Config.GroupID, c.Config.NodeID, device.GetDeviceID())
+	topic := fmt.Sprintf("spBv1.0/%s/DDATA/%s/%s", c.Config.GroupID, c.Config.NodeID, device.GetId())
 	if err := c.publish(topic, payload, false); err != nil {
 		return fmt.Errorf("failed to publish DDATA: %w", err)
 	}
 
-	log.Printf("Published DDATA for device %s to topic %s", device.GetDeviceID(), topic)
+	log.Printf("Published DDATA for device %s to topic %s", device.GetId(), topic)
 
 	return nil
 }
