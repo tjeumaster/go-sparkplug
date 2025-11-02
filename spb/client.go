@@ -1,24 +1,14 @@
-package sparkplug
+package spb
 
 import (
 	"fmt"
 	"log"
 	"sync"
-	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/tjeumaster/go-sparkplug/sproto"
+	"github.com/tjeumaster/sparkplug-b/sproto"
 	"google.golang.org/protobuf/proto"
 )
-
-type Client struct {
-	MqttClient mqtt.Client
-	Config	 *Config
-	BdSeq uint64
-	currentBdSeq uint64
-	Seq uint64
-	mu sync.Mutex
-}
 
 type Config struct {
 	Host     string
@@ -30,66 +20,53 @@ type Config struct {
 	NodeID   string
 }
 
+type Client struct {
+	MqttClient mqtt.Client
+	Config     Config
+	BdSeq      uint64
+	Seq        uint64
+	mu         sync.Mutex
+}
 
 type Device interface {
 	GetId() string
 	GetMetricValues() map[string]any
 }
 
-func NewClient(config *Config) *Client {
+func NewClient(config Config) *Client {
 	return &Client{
 		Config: config,
-		BdSeq: 0,
 		Seq:    0,
-		MqttClient: nil,
+		BdSeq:  0,
 	}
 }
 
-func (c *Client) getSeq() uint64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	seq := c.Seq
-	c.Seq = (c.Seq + 1) % 256
-	return seq
-}
-
-func (c *Client) getBdSeq() uint64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.currentBdSeq = c.BdSeq
-	c.BdSeq++
-	return c.currentBdSeq
-}
-
-func (c *Client) Start() {
+func (c *Client) Connect() error {
 	mqttBroker := fmt.Sprintf("tcp://%s:%d", c.Config.Host, c.Config.Port)
 
 	ndeathPayload, err := c.buildNDEATHPayload()
 	if err != nil {
 		log.Fatalf("Failed to build NDEATH payload: %v", err)
 	}
-	
+
 	ndeathTopic := fmt.Sprintf("spBv1.0/%s/NDEATH/%s", c.Config.GroupID, c.Config.NodeID)
 
 	opts := mqtt.NewClientOptions().
-			AddBroker(mqttBroker).
-			SetClientID(c.Config.ClientID).
-			SetOnConnectHandler(func(client mqtt.Client) {
-				c.PublishNBIRTH()
-			}).
-			SetWill(ndeathTopic, string(ndeathPayload), 0, true)
-
+		AddBroker(mqttBroker).
+		SetClientID(c.Config.ClientID).
+		SetWill(ndeathTopic, string(ndeathPayload), 0, true).
+		SetAutoReconnect(true).
+		SetConnectRetry(true).
+		SetOnConnectHandler(func(client mqtt.Client) {
+			if err := c.PublishNBIRTH(); err != nil {
+				log.Printf("Failed to publish NBIRTH on connect: %v", err)
+			}
+		})
 	c.MqttClient = mqtt.NewClient(opts)
-
-	for {
-		token := c.MqttClient.Connect()
-		token.Wait()
-		if err := token.Error(); err == nil {
-			break
-		} else {
-			fmt.Printf("MQTT Client Connection failed: %v. Retrying in 10 seconds...\n", err)
-			time.Sleep(10 * time.Second)
-		}
+	token := c.MqttClient.Connect()
+	token.Wait()
+	if err := token.Error(); err != nil {
+		return fmt.Errorf("failed to connect to MQTT broker: %w", err)
 	}
 
 	ncmdTopic := fmt.Sprintf("spBv1.0/%s/NCMD/%s", c.Config.GroupID, c.Config.NodeID)
@@ -98,37 +75,26 @@ func (c *Client) Start() {
 	c.MqttClient.Subscribe(dcmdTopic, 0, c.onCommandReceived)
 
 	log.Printf("Connected to MQTT broker at %s", mqttBroker)
+
+	return nil
 }
 
-func (c *Client) Stop() {
+func (c *Client) Disconnect() error {
 	if c.MqttClient == nil || !c.MqttClient.IsConnected() {
-		log.Printf("MQTT client is not connected, nothing to stop")
-		return
+		return fmt.Errorf("MQTT client is not connected")
 	}
 
-	ddeathPayload, err := c.buildNDEATHPayload()
-	if err != nil {
-		log.Printf("Failed to build NDEATH payload: %v", err)
-		
-	} else {
-		ddeathTopic := fmt.Sprintf("spBv1.0/%s/NDEATH/%s", c.Config.GroupID, c.Config.NodeID)
-		token := c.MqttClient.Publish(ddeathTopic, 0, true, string(ddeathPayload))
-		token.Wait()
-		if err := token.Error(); err != nil {
-			log.Printf("Failed to publish NDEATH: %v", err)
-		} 
-		
-		log.Printf("Published NDEATH to topic %s", ddeathTopic)
-		
-	} 
-		
+	if err := c.PublishNDEATH(); err != nil {
+		log.Printf("Failed to publish NDEATH before disconnect: %v", err)
+	}
+
 	c.MqttClient.Disconnect(250)
+
 	log.Printf("Disconnected from MQTT broker")
 	c.MqttClient = nil
-	c.BdSeq = 0
-	c.currentBdSeq = 0
 	c.Seq = 0
 	log.Printf("MQTT client stopped and reset")
+	return nil
 }
 
 func (c *Client) publish(topic string, payload []byte, retained bool) error {
@@ -137,10 +103,20 @@ func (c *Client) publish(topic string, payload []byte, retained bool) error {
 	if err := token.Error(); err != nil {
 		return fmt.Errorf("failed to publish to topic %s: %w", topic, err)
 	}
+
+	c.incrementSeq()
+
 	return nil
 }
 
+func (c *Client) incrementSeq() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Seq = (c.Seq + 1) % 256
+}
+
 func (c *Client) PublishNBIRTH() error {
+	c.BdSeq++
 	payload, err := c.buildNBIRTHPayload()
 	if err != nil {
 		return fmt.Errorf("failed to build NBIRTH payload: %w", err)
@@ -153,8 +129,6 @@ func (c *Client) PublishNBIRTH() error {
 
 	log.Printf("Published NBIRTH to topic %s", topic)
 
-	c.BdSeq++
-
 	return nil
 }
 
@@ -163,7 +137,6 @@ func (c *Client) PublishNDEATH() error {
 	if err != nil {
 		return fmt.Errorf("failed to build NDEATH payload: %w", err)
 	}
-
 	topic := fmt.Sprintf("spBv1.0/%s/NDEATH/%s", c.Config.GroupID, c.Config.NodeID)
 	if err := c.publish(topic, payload, true); err != nil {
 		return fmt.Errorf("failed to publish NDEATH: %w", err)
@@ -241,21 +214,23 @@ func (c *Client) PublishDDATA(device Device, metricValues map[string]any) error 
 func (c *Client) onCommandReceived(client mqtt.Client, msg mqtt.Message) {
 	payloadBytes := msg.Payload()
 
-    var payload sproto.Payload
-    err := proto.Unmarshal(payloadBytes, &payload)
-    if err != nil {
-        log.Printf("Failed to decode command payload: %v", err)
-        return
-    }
+	var payload sproto.Payload
+	err := proto.Unmarshal(payloadBytes, &payload)
+	if err != nil {
+		log.Printf("Failed to decode command payload: %v", err)
+		return
+	}
 
-    for _, metric := range payload.Metrics {
-        c.handleCommandMetric(metric, msg.Topic())
-    }
+	for _, metric := range payload.Metrics {
+		if err := c.handleCommandMetric(metric, msg.Topic()); err != nil {
+			log.Printf("Error handling command metric: %v", err)
+		}
+	}
 }
 
-func (c *Client) handleCommandMetric(metric *sproto.Payload_Metric, topic string) error{
+func (c *Client) handleCommandMetric(metric *sproto.Payload_Metric, topic string) error {
 	name := metric.GetName()
-	
+
 	switch name {
 	case "Node Control/Rebirth":
 		log.Printf("Received Rebirth command on topic %s", topic)
@@ -266,7 +241,7 @@ func (c *Client) handleCommandMetric(metric *sproto.Payload_Metric, topic string
 
 		log.Printf("Published NBIRTH in response to Rebirth command on topic %s", topic)
 		return nil
-		
+
 	case "Node Control/Reboot":
 		log.Printf("Received Reboot command on topic %s", topic)
 		return nil
@@ -276,6 +251,3 @@ func (c *Client) handleCommandMetric(metric *sproto.Payload_Metric, topic string
 		return nil
 	}
 }
-
-
-

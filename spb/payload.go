@@ -1,18 +1,19 @@
-package sparkplug
+package spb
 
 import (
 	"fmt"
 	"time"
-	"github.com/tjeumaster/go-sparkplug/sproto"
+
+	"github.com/tjeumaster/sparkplug-b/sproto"
 	"google.golang.org/protobuf/proto"
 )
 
 func (c *Client) buildNBIRTHPayload() ([]byte, error) {
 	payload := &sproto.Payload{
 		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
-		Seq:       proto.Uint64(c.getSeq()),
+		Seq:       proto.Uint64(c.Seq),
 		Metrics: []*sproto.Payload_Metric{
-			ToMetric("bdSeq", c.getBdSeq()),
+			ToMetric("bdSeq", c.BdSeq),
 			ToMetric("Node Control/Rebirth", false),
 			ToMetric("Node Control/Reboot", false),
 		},
@@ -27,12 +28,11 @@ func (c *Client) buildNBIRTHPayload() ([]byte, error) {
 }
 
 func (c *Client) buildNDEATHPayload() ([]byte, error) {
-	bdSeq := c.currentBdSeq
 	payload := &sproto.Payload{
 		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
-		Seq:       proto.Uint64(c.getSeq()),
+		Seq:       proto.Uint64(c.Seq),
 		Metrics: []*sproto.Payload_Metric{
-			ToMetric("bdSeq", bdSeq),
+			ToMetric("bdSeq", c.BdSeq),
 			ToMetric("Node Control/Rebirth", false),
 			ToMetric("Node Control/Reboot", false),
 		},
@@ -56,7 +56,7 @@ func (c *Client) buildDBIRTHPayload(d Device) ([]byte, error) {
 
 	payload := &sproto.Payload{
 		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
-		Seq:       proto.Uint64(c.getSeq()),
+		Seq:       proto.Uint64(c.Seq),
 		Metrics: metrics,
 	}
 	
@@ -71,7 +71,7 @@ func (c *Client) buildDBIRTHPayload(d Device) ([]byte, error) {
 func (c *Client) buildDDEATHPayload() ([]byte, error) {
 	payload := &sproto.Payload{
 		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
-		Seq:       proto.Uint64(c.getSeq()),
+		Seq:       proto.Uint64(c.Seq),
 	}
 
 	payloadBytes, err := proto.Marshal(payload)
@@ -97,13 +97,13 @@ func (c *Client) buildNDATAPayload(metricValues map[string]any) ([]byte, error) 
 
 	payload := &sproto.Payload{
 		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
-		Seq:       proto.Uint64(c.getSeq()),
+		Seq:       proto.Uint64(c.Seq),
 		Metrics:   metrics,
 	}
 
 	payloadBytes, err := proto.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal NDATAPayload: %w", err)
+		return nil, fmt.Errorf("failed to marshal NDATA payload: %w", err)
 	}
 
 	return payloadBytes, nil
@@ -124,7 +124,7 @@ func (c *Client) buildDDATAPayload(metricValues map[string]any) ([]byte, error) 
 
 	payload := &sproto.Payload{
 		Timestamp: proto.Uint64(uint64(time.Now().UnixMilli())),
-		Seq:       proto.Uint64(c.getSeq()),
+		Seq:       proto.Uint64(c.Seq),
 		Metrics: metrics,
 	}
 

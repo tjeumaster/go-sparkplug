@@ -1,9 +1,9 @@
-package sparkplug
+package spb
 
 import (
 	"time"
 
-	"github.com/tjeumaster/go-sparkplug/sproto"
+	"github.com/tjeumaster/sparkplug-b/sproto"
 	"google.golang.org/protobuf/proto"
 )
 
