@@ -1,4 +1,4 @@
-module github.com/tjeumaster/sparkplug-b
+module github.com/tjeumaster/go-sparkplug
 
 go 1.24.0
 

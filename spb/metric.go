@@ -3,7 +3,7 @@ package spb
 import (
 	"time"
 
-	"github.com/tjeumaster/sparkplug-b/sproto"
+	"github.com/tjeumaster/go-sparkplug/sproto"
 	"google.golang.org/protobuf/proto"
 )
 
